@@ -1,0 +1,43 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>fr.nestof.rfDecoder</groupId>
+	<artifactId>mczRfDecoder</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<build>
+		<plugins>
+			<plugin>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.1</version>
+				<configuration>
+					<source>1.7</source>
+					<target>1.7</target>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>2.3.1</version>
+				<configuration>
+					<outputDirectory>${analyser.dir}/plugins</outputDirectory>
+					<finalName>plugins</finalName>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<dependencies>
+		<dependency>
+			<groupId>nu.nethome</groupId>
+			<artifactId>utils</artifactId>
+			<version>1.0</version>
+			<scope>system</scope>
+			<systemPath>${analyser.dir}/lib/utils-1.0.jar</systemPath>
+		</dependency>
+	</dependencies>
+	
+	<properties>
+		<analyser.dir>D:/MyApps/analyzer</analyser.dir>
+	</properties>
+
+</project>
