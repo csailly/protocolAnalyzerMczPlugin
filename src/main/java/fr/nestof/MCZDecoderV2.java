@@ -156,7 +156,6 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 	 * 
 	 * @return information about the decoder
 	 */
-	@Override
 	public ProtocolInfo getInfo() {
 
 		return new ProtocolInfo("MCZ", "Manchester", "Mcz", MCZDecoderV2.MESSAGE_LENGTH, 5);
@@ -173,11 +172,10 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 	 *            true for a mark pulse and false for a space pulse
 	 * @return the internal state of the decoder after decoding the pulse.
 	 */
-	@Override
 	public int parse(final double pulse, final boolean state) {
 		switch (this.state) {
 		case IDLE: {
-			if (pulse >= 1134 && pulse <= 1315 && state) {
+			if (pulse >= 1134 && pulse <= 1315 && !state) {
 				// Start message pulse
 				pulseIndex = 1;
 				this.state = READING_MESSAGE;
@@ -186,12 +184,12 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 				} else {
 					log("Start " + pulse, true);
 				}
-				log("h", false);
+				log("b", false);
 				decodedDataValue = "";
 				decodedMessageValue = "";
 				datas.clear();
 			} else {
-				log("" + pulse, true);
+				log("" + pulse + " : " + state, true);
 			}
 			break;
 		}
@@ -211,7 +209,7 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 				}
 				pulseIndex++;
 				if (pulseIndex % 2 == 0) {
-					addBit(!state);
+					addBit(state);
 				}
 			} else if (pulse >= 771 && pulse <= 907) {
 				// Double pulse
@@ -230,17 +228,29 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 				}
 				pulseIndex += 2;
 				if (pulseIndex % 2 == 1) {
-					addBit(!state);
+					addBit(state);
 				}
-			} else if (pulse >= 1134 && pulse <= 1315 & state) {
+			} else if (pulse >= 1134 && pulse <= 1315 & !state) {
 				// Datas separator pulse
-				log("h", false);
+				log("b", false);
 				pulseIndex = 1;
 				data = 0;
 				decodedDataValue = "";
-			} else if (pulse >= 4580) {
+			} else if (pulse >= 4580 && pulse < 200000) {
 				// End message pulse
-				log("b", false);
+				log("h", false);
+				addBit(state);
+				log("End " + pulse, true);
+
+				pulseIndex = 0;
+				decodedDataValue = "";
+				decodedMessageValue = "";
+				this.state = IDLE;
+				data = 0;
+				bitCounter = 0;
+			} else if (pulse >= 200000) {
+				// End message pulse
+				log("h", false);
 				addBit(!state);
 				log("End " + pulse, true);
 
@@ -250,7 +260,7 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 				this.state = IDLE;
 				data = 0;
 				bitCounter = 0;
-			} else {
+			}else {
 				log("error" + pulse, true);
 				pulseIndex = 0;
 				decodedDataValue = "";
@@ -272,7 +282,6 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 	 * 
 	 * @param sink
 	 */
-	@Override
 	public void setTarget(final ProtocolDecoderSink sink) {
 		this.sink = sink;
 	}
