@@ -34,9 +34,14 @@ import nu.nethome.util.ps.ProtocolDecoder;
 import nu.nethome.util.ps.ProtocolDecoderSink;
 import nu.nethome.util.ps.ProtocolInfo;
 import nu.nethome.util.ps.ProtocolMessage;
+import nu.nethome.util.ps.PulseLength;
 
 @Plugin
-public class MCZDecoder implements ProtocolDecoder {
+public class MCZDecoderV1 implements ProtocolDecoder {
+
+	private static final boolean SHOW_LOG = false;
+
+	private static final String LOG_FILE = "d:/decode.txt";
 
 	private static final int IDLE = 0;
 
@@ -46,7 +51,7 @@ public class MCZDecoder implements ProtocolDecoder {
 
 	private static final int NB_DATA_BY_MESSAGE = 7;
 
-	private int state = MCZDecoder.IDLE;
+	private int state = MCZDecoderV1.IDLE;
 
 	private final List<Long> datas = new ArrayList<Long>();
 
@@ -74,12 +79,28 @@ public class MCZDecoder implements ProtocolDecoder {
 
 	private String lastDecodedMessageValue = "";
 
-	public MCZDecoder(){
+	public static final int SHORT_PULSE_LENGTH = 408;
+
+	public static final int LONG_PULSE_LENGTH = 816;
+
+	public static final int DATAS_SPACE_LENGTH = 1224;
+
+	public static final double START_TRAME_LENGTH = 199000.0;
+
+	public static final PulseLength SHORT_PULSE = new PulseLength(MCZDecoderV1.class, "SHORT_MARK", SHORT_PULSE_LENGTH, 272, 612);
+
+	public static final PulseLength LONG_PULSE = new PulseLength(MCZDecoderV1.class, "LONG_MARK", LONG_PULSE_LENGTH, 635, 930);
+
+	public static final PulseLength DATAS_SPACE_PULSE = new PulseLength(MCZDecoderV1.class, "DATAS_SPACE", DATAS_SPACE_LENGTH, 1179, 1429);
+
+	public static final PulseLength MESSAGES_SPACE_PULSE= new PulseLength(MCZDecoderV1.class, "MESSAGES_SPACE", 5150, 5079, 199000);
+
+	public MCZDecoderV1(){
 		try {
-			fos = new FileOutputStream("d:/decode.txt");
+			fos = new FileOutputStream(LOG_FILE);
 			fos.close();
 		} catch (final IOException e) {
-			Logger.getLogger(MCZDecoder.class.getName()).log(Level.SEVERE,
+			Logger.getLogger(MCZDecoderV1.class.getName()).log(Level.SEVERE,
 					null, e);
 		}
 	}
@@ -94,8 +115,8 @@ public class MCZDecoder implements ProtocolDecoder {
 	private void addBit(final boolean b) {
 		final int bit = b ? 1 : 0;
 
-		decodedDataValue = bit + decodedDataValue;
-		decodedMessageValue = bit + decodedMessageValue;
+		decodedDataValue = decodedDataValue + bit;
+		decodedMessageValue = decodedMessageValue + bit;
 
 		data <<= 1;
 		data |= bit;
@@ -103,32 +124,29 @@ public class MCZDecoder implements ProtocolDecoder {
 		bitCounter++;
 
 		// Check if a single data is receive
-		if (bitCounter
-				% (MCZDecoder.MESSAGE_LENGTH / MCZDecoder.NB_DATA_BY_MESSAGE) == 0) {
-			// log(" DATA : " + Long.toBinaryString(data) + " 0x"
-			// + Long.toHexString(data) + " " + data + " | ", false);
-			//
-			// log(decodedDataValue + " 0x"
-			// + Long.toHexString(Long.parseLong(decodedDataValue, 2))
-			// + " " + Long.parseLong(decodedDataValue, 2), true);
+		if (bitCounter % (MESSAGE_LENGTH / NB_DATA_BY_MESSAGE) == 0) {
+			log(" DATA : " + Long.toBinaryString(data) + " 0x" + Long.toHexString(data) + " " + data, true);
+
 
 			datas.add(data);
 			data = 0;
 		}
 
 		// Check if this is a complete message
-		if (bitCounter == MCZDecoder.MESSAGE_LENGTH) {
+		if (bitCounter == MESSAGE_LENGTH) {
 			String hexMessage = "";
 
 			for (final Long data : datas) {
 				hexMessage += "0x" + Long.toHexString(data) + " ";
 			}
-			if (repeatCount == 0) {
-				log("Message : " + hexMessage, true);
-			}
+
+
+			// It is, read the parameters
+			final int command = 0;
+			final int address = 0;
 
 			// Create the message
-			final ProtocolMessage message = new ProtocolMessage("MCZ", 2, 6, 7);
+			final ProtocolMessage message = new ProtocolMessage("MCZ V1", command, address, 7);
 			for (int i = 0; i < 7; i++) {
 				message.setRawMessageByteAt(i, datas.get(i).intValue());
 			}
@@ -136,11 +154,9 @@ public class MCZDecoder implements ProtocolDecoder {
 			message.addField(new FieldValue("Message", hexMessage));
 
 			// Check if this is a repeat
-			if (decodedMessageValue.equals(lastDecodedMessageValue)) {
+			if (decodedMessageValue.length() != 0 && decodedMessageValue.equals(lastDecodedMessageValue)) {
 				repeatCount++;
 				message.setRepeat(repeatCount);
-			} else {
-				repeatCount = 0;
 			}
 
 			// Report the parsed message
@@ -148,7 +164,10 @@ public class MCZDecoder implements ProtocolDecoder {
 			lastDecodedMessageValue = decodedMessageValue;
 			data = 0;
 			bitCounter = 0;
-			state = MCZDecoder.IDLE;
+			state = IDLE;
+
+			log("Message : " + hexMessage, false);
+			log(" - RepeatCount : " +  repeatCount, true);
 		}
 
 	}
@@ -161,8 +180,8 @@ public class MCZDecoder implements ProtocolDecoder {
 	@Override
 	public ProtocolInfo getInfo() {
 
-		return new ProtocolInfo("MCZ", "Manchester", "Mcz",
-				MCZDecoder.MESSAGE_LENGTH, 5);
+		return new ProtocolInfo("MCZ v1", "Manchester", "Mcz",
+				MCZDecoderV1.MESSAGE_LENGTH, 5);
 	}
 
 	/**
@@ -181,70 +200,82 @@ public class MCZDecoder implements ProtocolDecoder {
 
 		switch (this.state) {
 		case IDLE: {
-			if (pulse >= 1175 && pulse <= 1315 && lastPulse > 5100 && state) {
-				// Start message pulse
-				pulseIndex = 1;
-				this.state = MCZDecoder.READING_MESSAGE;
-				// log("Start " + pulse, true);
-				// log("h", false);
+			if (START_TRAME_LENGTH == pulse){
+				//Start Trame
+				log("Start Trame " + pulse + " : " + state, true);
 				decodedDataValue = "";
 				decodedMessageValue = "";
 				datas.clear();
+				data = 0;
+				pulseIndex = 0;
+				bitCounter = 0;
+				repeatCount = 0;
+			}else if (DATAS_SPACE_PULSE.matches(pulse) && MESSAGES_SPACE_PULSE.matches(lastPulse) && state) {
+				// Start message pulse
+				pulseIndex = 1;
+				this.state = READING_MESSAGE;
+				log("Start " + pulse + " : " + state, true);
+				log("h", false);
+				decodedDataValue = "";
+				//				decodedMessageValue = "";
+				datas.clear();
+			} else {
+				log(pulse + " : " + state, true);
 			}
 			break;
 		}
 		case READING_MESSAGE: {
 			if (lastState == state) {
-				// 2 consecutive state must be different
+				// 2 consecutive state must be differents
+				log("Error 2 consecutive state must be differents " + pulse + " : " + state, true);
 				break;
 			}
 
-			if (pulse >= 340 && pulse <= 612) {
+			if (SHORT_PULSE.matches(pulse)) {
 				// Single pulse
-				// if (!state) {
-				// log("b", false);
-				// } else {
-				// log("h", false);
-				// }
+				if (!state) {
+					log("b", false);
+				} else {
+					log("h", false);
+				}
 				pulseIndex++;
 				if (pulseIndex % 2 == 0) {
 					addBit(!state);
 				}
-			} else if (pulse >= 700 && pulse <= 865) {
+			} else if (LONG_PULSE.matches(pulse)) {
 				// Double pulse
-				// if (!state) {
-				// log("bb", false);
-				// } else {
-				// log("hh", false);
-				// }
+				if (!state) {
+					log("bb", false);
+				} else {
+					log("hh", false);
+				}
 				pulseIndex += 2;
 				if (pulseIndex % 2 == 1) {
 					addBit(!state);
 				}
-			} else if (pulse >= 1179 && pulse <= 1315 & state) {
+			} else if (DATAS_SPACE_PULSE.matches(pulse) & state) {
 				// Datas separator pulse
-				// log("h", false);
+				log("h", false);
 				pulseIndex = 1;
 				data = 0;
 				decodedDataValue = "";
-			} else if (pulse >= 5079) {
+			} else if (MESSAGES_SPACE_PULSE.matches(pulse)) {
 				// End message pulse
-				// log("b", false);
+				log("b", false);
 				addBit(!state);
-				// log("End " + pulse, true);
+				log("End " + pulse + " : " + state, true);
 				pulseIndex = 0;
 				decodedDataValue = "";
 				decodedMessageValue = "";
-				this.state = MCZDecoder.IDLE;
+				this.state = IDLE;
 				data = 0;
 				bitCounter = 0;
 			} else {
-				log("", true);
-				log("error " + pulse, true);
+				log("Error " + pulse + " : " + state, true);
 				pulseIndex = 0;
 				decodedDataValue = "";
 				decodedMessageValue = "";
-				this.state = MCZDecoder.IDLE;
+				this.state = IDLE;
 				data = 0;
 				bitCounter = 0;
 			}
@@ -267,16 +298,19 @@ public class MCZDecoder implements ProtocolDecoder {
 	}
 
 	private void log(final String line, final boolean newLine) {
+		if(!SHOW_LOG) {
+			return;
+		}
 
 		try {
-			fos = new FileOutputStream("d:/decode.txt", true);
+			fos = new FileOutputStream(LOG_FILE, true);
 			writer = new BufferedWriter(new OutputStreamWriter(fos));
 			writer.write(line);
 			if (newLine) {
 				writer.newLine();
 			}
 		} catch (final IOException e) {
-			Logger.getLogger(MCZDecoder.class.getName()).log(Level.SEVERE,
+			Logger.getLogger(MCZDecoderV1.class.getName()).log(Level.SEVERE,
 					null, e);
 		}
 
@@ -284,8 +318,8 @@ public class MCZDecoder implements ProtocolDecoder {
 			writer.close();
 			fos.close();
 		} catch (final IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			Logger.getLogger(MCZDecoderV1.class.getName()).log(Level.SEVERE,
+					null, e);
 		}
 
 	}

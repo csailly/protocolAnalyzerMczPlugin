@@ -34,6 +34,7 @@ import nu.nethome.util.ps.ProtocolDecoder;
 import nu.nethome.util.ps.ProtocolDecoderSink;
 import nu.nethome.util.ps.ProtocolInfo;
 import nu.nethome.util.ps.ProtocolMessage;
+import nu.nethome.util.ps.PulseLength;
 
 @Plugin
 public class MCZDecoderV2 implements ProtocolDecoder {
@@ -74,9 +75,18 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 
 	private String lastDecodedMessageValue = "";
 
+	private static final String LOG_FILE = "c:/decode.txt";
+
+	public static final PulseLength SHORT_PULSE = new PulseLength(MCZDecoderV2.class, "SHORT_MARK", 408, 317, 544);
+	
+	public static final PulseLength LONG_PULSE = new PulseLength(MCZDecoderV2.class, "LONG_MARK", 816, 771, 907);
+	
+	public static final PulseLength DATAS_SPACE = new PulseLength(MCZDecoderV2.class, "DATAS_SPACE", 1224, 1134, 1315);
+
+
 	public MCZDecoderV2() {
 		try {
-			fos = new FileOutputStream("d:/decode.txt");
+			fos = new FileOutputStream(LOG_FILE);
 			fos.close();
 		} catch (final IOException e) {
 			Logger.getLogger(MCZDecoderV2.class.getName()).log(Level.SEVERE, null, e);
@@ -93,8 +103,8 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 	private void addBit(final boolean b) {
 		final int bit = b ? 1 : 0;
 
-		decodedDataValue = bit + decodedDataValue;
-		decodedMessageValue = bit + decodedMessageValue;
+		decodedDataValue = decodedDataValue + bit;
+		decodedMessageValue = decodedMessageValue + bit;
 
 		data <<= 1;
 		data |= bit;
@@ -126,7 +136,7 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 			}
 
 			// Create the message
-			final ProtocolMessage message = new ProtocolMessage("MCZ", 2, 6, 7);
+			final ProtocolMessage message = new ProtocolMessage("MCZ V2", 2, 6, 7);
 			for (int i = 0; i < 7; i++) {
 				message.setRawMessageByteAt(i, datas.get(i).intValue());
 			}
@@ -158,7 +168,7 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 	 */
 	public ProtocolInfo getInfo() {
 
-		return new ProtocolInfo("MCZ", "Manchester", "Mcz", MCZDecoderV2.MESSAGE_LENGTH, 5);
+		return new ProtocolInfo("MCZ V2", "Manchester Reversed", "Mcz", MCZDecoderV2.MESSAGE_LENGTH, 5);
 	}
 
 	/**
@@ -175,11 +185,11 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 	public int parse(final double pulse, final boolean state) {
 		switch (this.state) {
 		case IDLE: {
-			if (pulse >= 1134 && pulse <= 1315 && !state) {
+			if (DATAS_SPACE.matches(pulse) && !state) {
 				// Start message pulse
 				pulseIndex = 1;
 				this.state = READING_MESSAGE;
-				if (lastPulse >= 317 && lastPulse <= 544) {
+				if (SHORT_PULSE.matches(lastPulse)) {
 					log("Start Trame " + pulse, true);
 				} else {
 					log("Start " + pulse, true);
@@ -200,7 +210,7 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 				break;
 			}
 
-			if (pulse >= 317 && pulse <= 544) {
+			if (SHORT_PULSE.matches(pulse)) {
 				// Single pulse
 				if (!state) {
 					log("b", false);
@@ -211,7 +221,7 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 				if (pulseIndex % 2 == 0) {
 					addBit(state);
 				}
-			} else if (pulse >= 771 && pulse <= 907) {
+			} else if (LONG_PULSE.matches(pulse)) {
 				// Double pulse
 				if (!state) {
 					if ((bitCounter + 1) % 12 != 0) {
@@ -230,7 +240,7 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 				if (pulseIndex % 2 == 1) {
 					addBit(state);
 				}
-			} else if (pulse >= 1134 && pulse <= 1315 & !state) {
+			} else if (DATAS_SPACE.matches(pulse) & !state) {
 				// Datas separator pulse
 				log("b", false);
 				pulseIndex = 1;
@@ -260,7 +270,7 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 				this.state = IDLE;
 				data = 0;
 				bitCounter = 0;
-			}else {
+			} else {
 				log("error" + pulse, true);
 				pulseIndex = 0;
 				decodedDataValue = "";
@@ -287,9 +297,8 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 	}
 
 	private void log(final String line, final boolean newLine) {
-
 		try {
-			fos = new FileOutputStream("d:/decode.txt", true);
+			fos = new FileOutputStream(LOG_FILE, true);
 			writer = new BufferedWriter(new OutputStreamWriter(fos));
 			writer.write(line);
 			if (newLine) {
@@ -303,9 +312,7 @@ public class MCZDecoderV2 implements ProtocolDecoder {
 			writer.close();
 			fos.close();
 		} catch (final IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-
 	}
 }
